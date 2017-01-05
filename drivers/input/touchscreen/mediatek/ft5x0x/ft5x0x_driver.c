@@ -15,17 +15,143 @@
 #include <linux/of_irq.h>
 
 //#include "flash_on.h"
-//#define TPD_PROXIMITY
+#define TPD_PROXIMITY
 #define FTS_GESTRUE
 //#define TPD_CLOSE_POWER_IN_SLEEP
 
 #include "tpd.h"
+#ifdef TPD_PROXIMITY
 
+#define APS_ERR(fmt,arg...)           	//printk("<<proximity>> "fmt"\n",##arg)
+
+#define TPD_PROXIMITY_DEBUG(fmt,arg...) //printk("<<proximity>> "fmt"\n",##arg)
+
+#define TPD_PROXIMITY_DMESG(fmt,arg...) //printk("<<proximity>> "fmt"\n",##arg)
+
+static u8 tpd_proximity_flag 			= 0;
+
+static u8 tpd_proximity_flag_one 		= 0; //add for tpd_proximity by wangdongfang
+
+static u8 tpd_proximity_detect 		= 1;//0-->close ; 1--> far away
+
+#endif
 #ifdef FTS_GESTRUE
 #include "ft5x0x_getsure.h"
 #endif
 
 #include "ft5x0x_util.h"
+
+#ifdef TPD_PROXIMITY
+int tpd_read_ps(void)
+{
+	tpd_proximity_detect;
+	return 0;    
+}
+
+static int tpd_get_ps_value(void)
+{
+	return tpd_proximity_detect;
+}
+
+static int tpd_enable_ps(int enable)
+{
+	u8 state;
+	int ret = -1;
+	
+	i2c_smbus_read_i2c_block_data(i2c_client, 0xB0, 1, &state);
+	//printk("[proxi_fts]read: 999 0xb0's value is 0x%02X\n", state);
+
+	if (enable){
+		state |= 0x01;
+		tpd_proximity_flag = 1;
+		TPD_PROXIMITY_DEBUG("[proxi_fts]ps function is on\n");	
+	}else{
+		state &= 0x00;	
+		tpd_proximity_flag = 0;
+		TPD_PROXIMITY_DEBUG("[proxi_fts]ps function is off\n");
+	}
+	
+	ret = i2c_smbus_write_i2c_block_data(i2c_client, 0xB0, 1, &state);
+	TPD_PROXIMITY_DEBUG("[proxi_fts]write: 0xB0's value is 0x%02X\n", state);
+	return 0;
+}
+
+int tpd_ps_operate(void* self, uint32_t command, void* buff_in, int size_in,
+
+		void* buff_out, int size_out, int* actualout)
+{
+	int err = 0;
+	int value;
+	hwm_sensor_data *sensor_data;
+	TPD_DEBUG("[proxi_fts]command = 0x%02X\n", command);		
+	
+	switch (command)
+	{
+		case SENSOR_DELAY:
+			if((buff_in == NULL) || (size_in < sizeof(int)))
+			{
+				APS_ERR("Set delay parameter error!\n");
+				err = -EINVAL;
+			}
+			// Do nothing
+			break;
+		case SENSOR_ENABLE:
+			if((buff_in == NULL) || (size_in < sizeof(int)))
+			{
+				APS_ERR("Enable sensor parameter error!\n");
+				err = -EINVAL;
+			}
+			else
+			{				
+				value = *(int *)buff_in;
+				if(value)
+				{		
+					if((tpd_enable_ps(1) != 0))
+					{
+						APS_ERR("enable ps fail: %d\n", err); 
+						return -1;
+					}
+				}
+				else
+				{
+					if((tpd_enable_ps(0) != 0))
+					{
+						APS_ERR("disable ps fail: %d\n", err); 
+						return -1;
+					}
+				}
+			}
+			break;
+		case SENSOR_GET_DATA:
+			if((buff_out == NULL) || (size_out< sizeof(hwm_sensor_data)))
+			{
+				APS_ERR("get sensor data parameter error!\n");
+				err = -EINVAL;
+			}
+			else
+			{
+				sensor_data = (hwm_sensor_data *)buff_out;				
+				if((err = tpd_read_ps()))
+				{
+					err = -1;;
+				}
+				else
+				{
+					sensor_data->values[0] = tpd_get_ps_value();
+					TPD_PROXIMITY_DEBUG("huang sensor_data->values[0] 1082 = %d\n", sensor_data->values[0]);
+					sensor_data->value_divide = 1;
+					sensor_data->status = SENSOR_STATUS_ACCURACY_MEDIUM;
+				}					
+			}
+			break;
+		default:
+			APS_ERR("proxmy sensor operate function no this parameter %d!\n", command);
+			err = -1;
+			break;
+	}
+	return err;	
+}
+#endif
 
 extern struct tpd_device *tpd;
 extern int tpd_v_magnify_x;
