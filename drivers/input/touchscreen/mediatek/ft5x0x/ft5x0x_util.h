@@ -151,6 +151,11 @@ static void tpd_up(int x, int y)
 
 static int touch_event_handler(void *unused)
 {
+	#ifdef TPD_PROXIMITY
+	int err;
+	hwm_sensor_data sensor_data;
+	u8 proximity_status;
+	#endif
 	int i=0;
 	struct touch_info cinfo, pinfo;
 	struct sched_param param = { .sched_priority = RTPM_PRIO_TPD };
@@ -168,6 +173,44 @@ static int touch_event_handler(void *unused)
 #ifdef FTS_GESTRUE
 	if (touch_getsure_event_handler(i2c_client)) continue;
 #endif
+	 #ifdef TPD_PROXIMITY
+
+		 if (tpd_proximity_flag == 1)
+		 {
+
+			i2c_smbus_read_i2c_block_data(i2c_client, 0xB0, 1, &state);
+            TPD_PROXIMITY_DEBUG("proxi_fts 0xB0 state value is 1131 0x%02X\n", state);
+			if(!(state&0x01))
+			{
+				tpd_enable_ps(1);
+			}
+			i2c_smbus_read_i2c_block_data(i2c_client, 0x01, 1, &proximity_status);
+            TPD_PROXIMITY_DEBUG("proxi_fts 0x01 value is 1139 0x%02X\n", proximity_status);
+			if (proximity_status == 0xC0)
+			{
+				tpd_proximity_detect = 0;	
+			}
+			else if(proximity_status == 0xE0)
+			{
+				tpd_proximity_detect = 1;
+			}
+
+			TPD_PROXIMITY_DEBUG("tpd_proximity_detect 1149 = %d\n", tpd_proximity_detect);
+			if ((err = tpd_read_ps()))
+			{
+				TPD_PROXIMITY_DMESG("proxi_fts read ps data 1156: %d\n", err);	
+			}
+			sensor_data.values[0] = tpd_get_ps_value();
+			sensor_data.value_divide = 1;
+			sensor_data.status = SENSOR_STATUS_ACCURACY_MEDIUM;
+			//if ((err = hwmsen_get_interrupt_data(ID_PROXIMITY, &sensor_data)))
+			//{
+			//	TPD_PROXIMITY_DMESG(" proxi_5206 call hwmsen_get_interrupt_data failed= %d\n", err);	
+			//}
+		}  
+
+		#endif
+              
 
 		TPD_DEBUG("touch_event_handler start \n");
 		if(tpd_touchinfo(i2c_client, &cinfo, &pinfo) == 0)
